@@ -3,8 +3,10 @@ module github.com/bastjan/k8s-object-dumper
 go 1.23.2
 
 require (
+	go.uber.org/multierr v1.11.0
 	k8s.io/apimachinery v0.31.0
 	k8s.io/client-go v0.31.0
+	rsc.io/getopt v0.0.0-20170811000552-20be20937449
 	sigs.k8s.io/controller-runtime v0.19.0
 )
 
