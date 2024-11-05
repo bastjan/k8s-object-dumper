@@ -26,7 +26,9 @@ type dumperFunc func(*unstructured.UnstructuredList) error
 
 func main() {
 	var dir string
+	var batchSize int64
 	flag.StringVar(&dir, "dir", "", "Directory to dump objects into")
+	flag.Int64Var(&batchSize, "batch-size", 500, "Batch size for listing objects")
 	getopt.Alias("d", "dir")
 
 	getopt.Parse()
@@ -46,10 +48,10 @@ func main() {
 		df = d.Dump
 	}
 
-	dumpObjects(df, os.Stderr)
+	dumpObjects(df, batchSize, os.Stderr)
 }
 
-func dumpObjects(dumper dumperFunc, logWriter io.Writer) error {
+func dumpObjects(dumper dumperFunc, batchSize int64, logWriter io.Writer) error {
 	conf, err := ctrl.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get Kubernetes config: %w", err)
@@ -83,13 +85,24 @@ func dumpObjects(dumper dumperFunc, logWriter io.Writer) error {
 				fmt.Fprintf(logWriter, "skipping %s: no list verb\n", res)
 				continue
 			}
-			l, err := dynClient.Resource(res).List(context.TODO(), metav1.ListOptions{})
-			if err != nil {
-				fmt.Fprintf(logWriter, "failed to list %s: %v\n", res, err)
-				continue
-			}
-			if err := dumper(l); err != nil {
-				fmt.Fprintf(logWriter, "failed to dump %s: %v\n", res, err)
+
+			continueKey := ""
+			for {
+				l, err := dynClient.Resource(res).List(context.TODO(), metav1.ListOptions{
+					Limit:    batchSize,
+					Continue: continueKey,
+				})
+				if err != nil {
+					fmt.Fprintf(logWriter, "failed to list %s: %v\n", res, err)
+					continue
+				}
+				if err := dumper(l); err != nil {
+					fmt.Fprintf(logWriter, "failed to dump %s: %v\n", res, err)
+				}
+				if l.GetContinue() == "" {
+					break
+				}
+				continueKey = l.GetContinue()
 			}
 		}
 	}
