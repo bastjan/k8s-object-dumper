@@ -48,7 +48,10 @@ func main() {
 		df = d.Dump
 	}
 
-	dumpObjects(df, batchSize, os.Stderr)
+	if err := dumpObjects(df, batchSize, os.Stderr); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to dump some or all objects: %+v\n", err)
+		os.Exit(1)
+	}
 }
 
 func dumpObjects(dumper dumperFunc, batchSize int64, logWriter io.Writer) error {
@@ -65,20 +68,21 @@ func dumpObjects(dumper dumperFunc, batchSize int64, logWriter io.Writer) error 
 		return fmt.Errorf("failed to create dynamic client: %w", err)
 	}
 
-	res, err := dc.ServerPreferredResources()
+	sprl, err := dc.ServerPreferredResources()
 	if err != nil {
 		return fmt.Errorf("failed to get server preferred resources: %w", err)
 	}
 
 	fmt.Fprintln(logWriter, "Discovered resources:")
-	for _, re := range res {
+	for _, re := range sprl {
 		fmt.Fprintln(logWriter, re.GroupVersion)
 		for _, r := range re.APIResources {
 			fmt.Fprintln(logWriter, "  ", r.Kind)
 		}
 	}
 
-	for _, re := range res {
+	var errors []error
+	for _, re := range sprl {
 		for _, r := range re.APIResources {
 			res := groupVersionFromString(re.GroupVersion).WithResource(r.Name)
 			if !slices.Contains(r.Verbs, "list") {
@@ -93,11 +97,11 @@ func dumpObjects(dumper dumperFunc, batchSize int64, logWriter io.Writer) error 
 					Continue: continueKey,
 				})
 				if err != nil {
-					fmt.Fprintf(logWriter, "failed to list %s: %v\n", res, err)
-					continue
+					errors = append(errors, fmt.Errorf("failed to list %s: %w", res, err))
+					break
 				}
 				if err := dumper(l); err != nil {
-					fmt.Fprintf(logWriter, "failed to dump %s: %v\n", res, err)
+					errors = append(errors, fmt.Errorf("failed to dump %s: %w", res, err))
 				}
 				if l.GetContinue() == "" {
 					break
@@ -107,7 +111,7 @@ func dumpObjects(dumper dumperFunc, batchSize int64, logWriter io.Writer) error 
 		}
 	}
 
-	return nil
+	return multierr.Combine(errors...)
 }
 
 func dumpJSONToWriter(w io.Writer) dumperFunc {
