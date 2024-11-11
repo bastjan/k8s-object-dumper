@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -19,6 +21,15 @@ import (
 type DiscoveryOptions struct {
 	BatchSize int64
 	LogWriter io.Writer
+
+	// MustExistResources is a list of resources that must exist in the cluster.
+	// This can be used as a sanity check to ensure that the discovery process is working as expected.
+	// If a resource does not exist, the discovery process will fail.
+	// If the list is empty, no resources are required to exist.
+	MustExistResources []string
+
+	// IgnoreResources is a list of resources to ignore during discovery.
+	IgnoreResources []*regexp.Regexp
 }
 
 // GetBatchSize returns the set batch size for listing objects or the default.
@@ -65,12 +76,34 @@ func DiscoverObjects(ctx context.Context, conf *rest.Config, cb func(*unstructur
 		}
 	}
 
+	if len(opts.MustExistResources) > 0 {
+		want := sets.New(opts.MustExistResources...)
+		have := sets.New[string]()
+		for _, re := range sprl {
+			for _, r := range re.APIResources {
+				res := formatGVRForComparison(groupVersionFromString(re.GroupVersion).WithResource(r.Name))
+				have.Insert(res)
+			}
+		}
+		missing := want.Difference(have)
+		if missing.Len() > 0 {
+			return fmt.Errorf("missing resources: %s", sets.List(missing))
+		}
+	}
+
 	var errors []error
 	for _, re := range sprl {
 		for _, r := range re.APIResources {
 			res := groupVersionFromString(re.GroupVersion).WithResource(r.Name)
 			if !slices.Contains(r.Verbs, "list") {
 				fmt.Fprintf(logWriter, "skipping %s: no list verb\n", res)
+				continue
+			}
+
+			if i := slices.IndexFunc(opts.IgnoreResources, func(re *regexp.Regexp) bool {
+				return re.MatchString(formatGVRForComparison(res))
+			}); i > -1 {
+				fmt.Fprintf(logWriter, "skipping %s: ignored by regex %q\n", res, opts.IgnoreResources[i].String())
 				continue
 			}
 
@@ -104,4 +137,11 @@ func groupVersionFromString(s string) schema.GroupVersion {
 		return schema.GroupVersion{Version: parts[0]}
 	}
 	return schema.GroupVersion{Group: parts[0], Version: parts[1]}
+}
+
+func formatGVRForComparison(gvr schema.GroupVersionResource) string {
+	if gvr.Group == "" {
+		return gvr.Resource
+	}
+	return fmt.Sprintf("%s.%s", gvr.Resource, gvr.Group)
 }

@@ -3,6 +3,7 @@ package discovery_test
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/bastjan/k8s-object-dumper/internal/pkg/discovery"
@@ -54,13 +55,27 @@ func Test_DiscoverObjects(t *testing.T) {
 			Name: "test-cluster-role",
 		},
 	}
+	r := rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-role",
+			Namespace: "test-ns",
+		},
+	}
 
-	for _, obj := range append([]client.Object{&ns, &cr}, sas...) {
+	for _, obj := range append([]client.Object{&ns, &cr, &r}, sas...) {
 		require.NoError(t, c.Create(context.Background(), obj))
 	}
 
 	require.NoError(t, discovery.DiscoverObjects(context.Background(), cfg, objTracker, discovery.DiscoveryOptions{
 		BatchSize: int64(cap(sas) / 2),
+		IgnoreResources: []*regexp.Regexp{
+			regexp.MustCompile(`^roles.rbac.authorization.k8s.io$`),
+		},
+		MustExistResources: []string{
+			"clusterroles.rbac.authorization.k8s.io",
+			"deployments.apps",
+			"namespaces",
+		},
 	}))
 
 	require.Contains(t, objs, objKey{apiVersion: "v1", kind: "Namespace", name: "test-ns", namespace: ""})
@@ -68,6 +83,23 @@ func Test_DiscoverObjects(t *testing.T) {
 	for i := 1; i <= cap(sas); i++ {
 		require.Contains(t, objs, objKey{apiVersion: "v1", kind: "ServiceAccount", name: fmt.Sprintf("test-service-account-%d", i), namespace: "test-ns"})
 	}
+	require.NotContains(t, objs, objKey{apiVersion: "rbac.authorization.k8s.io/v1", kind: "Role", name: "test-role", namespace: "test-ns"}, "Roles are ignored by regex")
+}
+
+func Test_DiscoverObjects_MustExistResources_NotSatisfied(t *testing.T) {
+	cfg, stop := setupEnvtestEnv(t)
+	defer stop()
+
+	discard := func(obj *unstructured.UnstructuredList) error {
+		return nil
+	}
+
+	require.ErrorContains(t, discovery.DiscoverObjects(context.Background(), cfg, discard, discovery.DiscoveryOptions{
+		MustExistResources: []string{
+			"fluxcapacitors.spaceship.io",
+			"namespaces",
+		},
+	}), "missing resources: [fluxcapacitors.spaceship.io]")
 }
 
 func setupEnvtestEnv(t *testing.T) (cfg *rest.Config, stop func()) {

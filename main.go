@@ -5,8 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 
-	"rsc.io/getopt"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/bastjan/k8s-object-dumper/internal/pkg/discovery"
@@ -16,11 +16,15 @@ import (
 func main() {
 	var dir string
 	var batchSize int64
+	mustExistResources := new(repeatableStringFlag)
+	ignoreResources := new(repeatableRegexpFlag)
+
 	flag.StringVar(&dir, "dir", "", "Directory to dump objects into")
 	flag.Int64Var(&batchSize, "batch-size", 500, "Batch size for listing objects")
-	getopt.Alias("d", "dir")
+	flag.Var(mustExistResources, "must-exist", "Resource that must exist in the cluster. Can be used multiple times.")
+	flag.Var(ignoreResources, "ignore", "Resource to ignore during discovery. Regexp, anchored by default. Can be used multiple times.")
 
-	getopt.Parse()
+	flag.Parse()
 
 	df := dumper.DumpToWriter(os.Stdout)
 	if dir != "" {
@@ -43,10 +47,39 @@ func main() {
 	}
 
 	if err := discovery.DiscoverObjects(context.Background(), conf, df, discovery.DiscoveryOptions{
-		BatchSize: batchSize,
-		LogWriter: os.Stderr,
+		BatchSize:          batchSize,
+		LogWriter:          os.Stderr,
+		MustExistResources: *mustExistResources,
+		IgnoreResources:    *ignoreResources,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to dump some or all objects: %+v\n", err)
 		os.Exit(1)
 	}
+}
+
+type repeatableStringFlag []string
+
+func (i *repeatableStringFlag) String() string {
+	return fmt.Sprintf("%v", *i)
+}
+
+func (i *repeatableStringFlag) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
+type repeatableRegexpFlag []*regexp.Regexp
+
+func (i *repeatableRegexpFlag) String() string {
+	return fmt.Sprintf("%v", *i)
+}
+
+func (i *repeatableRegexpFlag) Set(value string) error {
+	value = fmt.Sprintf("^%s$", value)
+	r, err := regexp.Compile(value)
+	if err != nil {
+		return fmt.Errorf("failed to compile regexp %q: %w", value, err)
+	}
+	*i = append(*i, r)
+	return nil
 }
