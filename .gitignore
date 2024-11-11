@@ -1,0 +1,14 @@
+# Goreleaser
+dist/
+.github/release-notes.md
+
+# Tools
+bin/
+
+# Build
+k8s-object-dumper
+*.out
+
+# Docs
+.cache/
+.public/
