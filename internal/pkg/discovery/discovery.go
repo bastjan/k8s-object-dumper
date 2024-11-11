@@ -76,7 +76,7 @@ func DiscoverObjects(ctx context.Context, conf *rest.Config, cb func(*unstructur
 
 			continueKey := ""
 			for {
-				l, err := dynClient.Resource(res).List(context.TODO(), metav1.ListOptions{
+				l, err := dynClient.Resource(res).List(ctx, metav1.ListOptions{
 					Limit:    batchSize,
 					Continue: continueKey,
 				})
