@@ -105,8 +105,8 @@ func Test_DirDumper(t *testing.T) {
 	requireFileContains(t, tdir+"/objects-Service.json", []ExpectedObject{
 		{Kind: "Service", Name: "test-svc", Namespace: "test-ns"},
 	})
-	require.FileExists(t, tdir+"/objects-ClusterRole.json")
-	requireFileContains(t, tdir+"/objects-ClusterRole.json", []ExpectedObject{
+	require.FileExists(t, tdir+"/objects-ClusterRole.rbac.authorization.k8s.io.json")
+	requireFileContains(t, tdir+"/objects-ClusterRole.rbac.authorization.k8s.io.json", []ExpectedObject{
 		{Kind: "ClusterRole", Name: "cluster-scoped", Namespace: ""},
 	})
 	require.FileExists(t, tdir+"/split/test-ns/__all__.json")

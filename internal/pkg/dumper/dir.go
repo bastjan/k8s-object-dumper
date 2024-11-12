@@ -66,8 +66,9 @@ func (d *DirDumper) Dump(l *unstructured.UnstructuredList) error {
 			continue
 		}
 		p := buf.Bytes()
+		gk := o.GroupVersionKind().GroupKind()
 
-		if err := d.writeToFile(fmt.Sprintf("%s/objects-%s.json", d.dir, o.GetKind()), p); err != nil {
+		if err := d.writeToFile(fmt.Sprintf("%s/objects-%s.json", d.dir, gk), p); err != nil {
 			errs = append(errs, err)
 		}
 
@@ -78,7 +79,7 @@ func (d *DirDumper) Dump(l *unstructured.UnstructuredList) error {
 		if err := d.writeToFile(fmt.Sprintf("%s/split/%s/__all__.json", d.dir, o.GetNamespace()), p); err != nil {
 			errs = append(errs, err)
 		}
-		if err := d.writeToFile(fmt.Sprintf("%s/split/%s/%s.json", d.dir, o.GetNamespace(), o.GetKind()), p); err != nil {
+		if err := d.writeToFile(fmt.Sprintf("%s/split/%s/%s.json", d.dir, o.GetNamespace(), gk), p); err != nil {
 			errs = append(errs, err)
 		}
 	}
